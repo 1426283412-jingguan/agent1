@@ -1,63 +1,106 @@
-"""Simple command-line translator using LibreTranslate public API.
+import streamlit as st
+from translator import translate
 
-Usage:
-    python translator.py "你好，世界" --source zh --target en
-"""
+st.set_page_config(
+    page_title="AI Translator",
+    page_icon="🌐",
+    layout="wide",
+    initial_sidebar_state="collapsed",
+)
 
-from __future__ import annotations
+st.markdown(
+    """
+    <style>
+      .stApp {
+        background: radial-gradient(1200px 600px at 10% -10%, #1f3b73 0%, #0a0f1f 40%, #060912 100%);
+        color: #f3f5f7;
+      }
+      .block-container {
+        max-width: 1100px;
+        padding-top: 2rem;
+        padding-bottom: 2rem;
+      }
+      .hero {
+        background: linear-gradient(135deg, rgba(67,97,238,0.22), rgba(0,212,255,0.16));
+        border: 1px solid rgba(255,255,255,0.12);
+        border-radius: 20px;
+        padding: 1.2rem 1.4rem;
+        backdrop-filter: blur(8px);
+        margin-bottom: 1rem;
+      }
+      .card {
+        background: rgba(255,255,255,0.04);
+        border: 1px solid rgba(255,255,255,0.12);
+        border-radius: 16px;
+        padding: 1rem;
+      }
+      .stTextArea textarea {
+        border-radius: 12px;
+      }
+      .stButton button {
+        background: linear-gradient(90deg,#5b8cff,#1ec8ff);
+        color: white;
+        border: none;
+        border-radius: 12px;
+        padding: 0.6rem 1rem;
+        font-weight: 600;
+      }
+    </style>
+    """,
+    unsafe_allow_html=True,
+)
 
-import argparse
-import json
-import sys
-import urllib.error
-import urllib.parse
-import urllib.request
+st.markdown(
+    """
+    <div class='hero'>
+      <h1 style='margin:0'>🌐 Smart Translator</h1>
+      <p style='margin:0.4rem 0 0 0; opacity:0.85'>企业级风格翻译体验：快速、清晰、舒适。</p>
+    </div>
+    """,
+    unsafe_allow_html=True,
+)
 
-API_URL = "https://libretranslate.com/translate"
+languages = {
+    "自动检测": "auto",
+    "中文": "zh",
+    "English": "en",
+    "日本語": "ja",
+    "한국어": "ko",
+    "Français": "fr",
+    "Deutsch": "de",
+    "Español": "es",
+    "Português": "pt",
+    "Русский": "ru",
+    "العربية": "ar",
+}
 
+left, right = st.columns(2)
+with left:
+    st.markdown("<div class='card'>", unsafe_allow_html=True)
+    source_label = st.selectbox("源语言", list(languages.keys()), index=0)
+    text = st.text_area("输入文本", height=280, placeholder="在此输入需要翻译的内容...")
+    st.markdown("</div>", unsafe_allow_html=True)
 
-def translate(text: str, source: str = "auto", target: str = "en") -> str:
-    """Translate text using LibreTranslate."""
-    payload = urllib.parse.urlencode(
-        {
-            "q": text,
-            "source": source,
-            "target": target,
-            "format": "text",
-        }
-    ).encode("utf-8")
+with right:
+    st.markdown("<div class='card'>", unsafe_allow_html=True)
+    target_options = [k for k in languages.keys() if k != "自动检测"]
+    target_label = st.selectbox("目标语言", target_options, index=1)
+    output_box = st.empty()
+    st.markdown("</div>", unsafe_allow_html=True)
 
-    req = urllib.request.Request(API_URL, data=payload, method="POST")
-    req.add_header("Content-Type", "application/x-www-form-urlencoded")
+col1, col2 = st.columns([1, 4])
+with col1:
+    run = st.button("开始翻译", use_container_width=True)
 
-    with urllib.request.urlopen(req, timeout=20) as response:
-        data = json.loads(response.read().decode("utf-8"))
-
-    if "translatedText" not in data:
-        raise ValueError(f"Unexpected API response: {data}")
-
-    return data["translatedText"]
-
-
-def main() -> int:
-    parser = argparse.ArgumentParser(description="Translate text between languages.")
-    parser.add_argument("text", help="Text to translate")
-    parser.add_argument("--source", default="auto", help="Source language code (default: auto)")
-    parser.add_argument("--target", default="en", help="Target language code (default: en)")
-    args = parser.parse_args()
-
-    try:
-        result = translate(args.text, source=args.source, target=args.target)
-    except (urllib.error.URLError, TimeoutError) as exc:
-        print(f"Network error: {exc}", file=sys.stderr)
-        return 1
-    except ValueError as exc:
-        print(str(exc), file=sys.stderr)
-        return 1
-
-    print(result)
-    return 0
-
-
-if __name__ == "__main__":
-    raise SystemExit(main())
+if run:
+    if not text.strip():
+        st.warning("请输入要翻译的文本。")
+    else:
+        with st.spinner("翻译中..."):
+            try:
+                result = translate(text, languages[source_label], languages[target_label])
+                output_box.text_area("翻译结果", value=result, height=280)
+            except Exception as exc:
+                st.error(f"翻译失败：{exc}")
+else:
+    output_box.text_area("翻译结果", value="", height=280, placeholder="结果会显示在这里")
