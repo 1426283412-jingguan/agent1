@@ -1,250 +1,131 @@
-import tkinter as tk
-from tkinter import filedialog, messagebox, ttk
+import streamlit as st
 import pandas as pd
-import os
+import plotly.express as px
 
-class DataAnalyzerApp:
-    def __init__(self, root):
-        self.root = root
-        self.root.title("数据统计工具 - LAR与良率计算")
-        self.root.geometry("600x500")
-        self.root.configure(padx=20, pady=20)
-        
-        self.filepath = None
-        self.data = None
-        
-        self.setup_ui()
+# 页面配置
+st.set_page_config(page_title="高级质量数据分析终端", layout="wide")
 
-    def setup_ui(self):
-        # File selection section
-        file_frame = ttk.LabelFrame(self.root, text="第一步：选择数据文件", padding=(10, 10))
-        file_frame.pack(fill="x", pady=(0, 15))
-        
-        self.file_label = ttk.Label(file_frame, text="未选择文件", foreground="gray")
-        self.file_label.pack(side="left", fill="x", expand=True, padx=(0, 10))
-        
-        browse_btn = ttk.Button(file_frame, text="浏览...", command=self.load_file)
-        browse_btn.pack(side="right")
-        
-        # Filter condition section
-        filter_frame = ttk.LabelFrame(self.root, text="第二步：设置筛选条件", padding=(10, 10))
-        filter_frame.pack(fill="x", pady=(0, 15))
-        
-        # Part Number (料号)
-        part_no_frame = ttk.Frame(filter_frame)
-        part_no_frame.pack(fill="x", pady=5)
-        ttk.Label(part_no_frame, text="料号列名:").pack(side="left", padx=(0, 5))
-        self.col_part_no = ttk.Combobox(part_no_frame, width=15, state="readonly")
-        self.col_part_no.pack(side="left", padx=(0, 15))
-        
-        ttk.Label(part_no_frame, text="目标料号:").pack(side="left", padx=(0, 5))
-        self.val_part_no = ttk.Entry(part_no_frame, width=20)
-        self.val_part_no.pack(side="left", fill="x", expand=True)
-        
-        # Period (周期)
-        period_frame = ttk.Frame(filter_frame)
-        period_frame.pack(fill="x", pady=5)
-        ttk.Label(period_frame, text="周期列名:").pack(side="left", padx=(0, 5))
-        self.col_period = ttk.Combobox(period_frame, width=15, state="readonly")
-        self.col_period.pack(side="left", padx=(0, 15))
-        
-        ttk.Label(period_frame, text="目标周期:").pack(side="left", padx=(0, 5))
-        self.val_period = ttk.Entry(period_frame, width=20)
-        self.val_period.pack(side="left", fill="x", expand=True)
-        
-        # Calculation parameters section
-        calc_frame = ttk.LabelFrame(self.root, text="第三步：设置计算列 (需为数值)", padding=(10, 10))
-        calc_frame.pack(fill="x", pady=(0, 15))
-        
-        # Total qty
-        tot_frame = ttk.Frame(calc_frame)
-        tot_frame.pack(fill="x", pady=5)
-        ttk.Label(tot_frame, text="总数/投入量 列:").pack(side="left", padx=(0, 5))
-        self.col_total = ttk.Combobox(tot_frame, width=20, state="readonly")
-        self.col_total.pack(side="left", fill="x", expand=True)
-        
-        # Pass qty
-        pass_frame = ttk.Frame(calc_frame)
-        pass_frame.pack(fill="x", pady=5)
-        ttk.Label(pass_frame, text="合格数/产出量 列:").pack(side="left", padx=(0, 5))
-        self.col_pass = ttk.Combobox(pass_frame, width=20, state="readonly")
-        self.col_pass.pack(side="left", fill="x", expand=True)
-        
-        # Action button
-        action_frame = ttk.Frame(self.root)
-        action_frame.pack(fill="x", pady=10)
-        calc_btn = ttk.Button(action_frame, text="开始计算", command=self.calculate_metrics)
-        calc_btn.pack(side="right")
-        
-        # Results section
-        result_frame = ttk.LabelFrame(self.root, text="计算结果", padding=(10, 10))
-        result_frame.pack(fill="both", expand=True)
-        
-        self.result_text = tk.Text(result_frame, height=8, wrap="word", state="disabled")
-        self.result_text.pack(fill="both", expand=True)
+def calculate_lar(data, result_col):
+    """通用 LAR 计算函数"""
+    res_series = data[result_col].astype(str).str.upper().str.strip()
+    ok = (res_series == "OK").sum()
+    ng = (res_series == "NG").sum()
+    total = ok + ng
+    lar = (ok / total * 100) if total > 0 else 0
+    return ok, ng, total, lar
 
-    def load_file(self):
-        filetypes = (
-            ('Excel 文件', '*.xlsx *.xls'),
-            ('CSV 文件', '*.csv'),
-            ('所有文件', '*.*')
-        )
-        
-        filepath = filedialog.askopenfilename(
-            title='选择数据表格',
-            initialdir='/',
-            filetypes=filetypes
-        )
-        
-        if not filepath:
-            return
-            
-        try:
-            # Read file based on extension
-            _, ext = os.path.splitext(filepath)
-            if ext.lower() in ['.xlsx', '.xls']:
-                self.data = pd.read_excel(filepath)
-            elif ext.lower() == '.csv':
-                self.data = pd.read_csv(filepath)
-            else:
-                messagebox.showerror("错误", "不支持的文件格式，请选择 Excel 或 CSV 文件。")
-                return
-                
-            self.filepath = filepath
-            filename = os.path.basename(filepath)
-            row_count = len(self.data)
-            self.file_label.config(text=f"{filename} (共 {row_count} 行数据)", foreground="black")
-            
-            # Update comboboxes with column names
-            columns = list(self.data.columns)
-            self.col_part_no['values'] = ["--不使用--"] + columns
-            self.col_part_no.current(0)
-            
-            self.col_period['values'] = ["--不使用--"] + columns
-            self.col_period.current(0)
-            
-            # Only numeric columns for total and pass
-            numeric_cols = list(self.data.select_dtypes(include=['number']).columns)
-            all_cols = ["--请选择--"] + columns
-            
-            self.col_total['values'] = all_cols
-            self.col_total.current(0)
-            
-            self.col_pass['values'] = all_cols
-            self.col_pass.current(0)
-            
-            self.log_result(f"成功加载文件: {filename}\n包含 {row_count} 行, {len(columns)} 列。")
-            
-        except Exception as e:
-            messagebox.showerror("读取错误", f"读取文件时发生错误:\n{str(e)}")
+def main():
+    st.title("🚀 高级质量数据分析与可视化平台")
+    st.markdown("---")
 
-    def calculate_metrics(self):
-        if self.data is None:
-            messagebox.showwarning("提示", "请先选择数据文件。")
-            return
-            
-        # Get selected columns
-        col_pn = self.col_part_no.get()
-        col_pd = self.col_period.get()
-        col_tot = self.col_total.get()
-        col_pas = self.col_pass.get()
-        
-        # Validation
-        if col_tot == "--请选择--" or col_pas == "--请选择--":
-            messagebox.showwarning("提示", "必须选择总数和合格数列才能进行计算。")
-            return
-            
-        # Ensure selected columns exist in dataframe
-        if col_tot not in self.data.columns or col_pas not in self.data.columns:
-            messagebox.showerror("错误", "所选的计算列在数据中不存在。")
-            return
-            
-        # Start filtering
-        df_filtered = self.data.copy()
-        filter_desc = []
-        
-        # Filter by Part Number if specified
-        if col_pn != "--不使用--":
-            target_pn = self.val_part_no.get().strip()
-            if target_pn:
-                # Convert to string to avoid type mismatch during comparison
-                df_filtered = df_filtered[df_filtered[col_pn].astype(str) == target_pn]
-                filter_desc.append(f"料号 = '{target_pn}'")
-                
-        # Filter by Period if specified
-        if col_pd != "--不使用--":
-            target_pd = self.val_period.get().strip()
-            if target_pd:
-                df_filtered = df_filtered[df_filtered[col_pd].astype(str) == target_pd]
-                filter_desc.append(f"周期 = '{target_pd}'")
-                
-        # Check if data is empty after filtering
-        if len(df_filtered) == 0:
-            self.log_result(f"筛选条件: {', '.join(filter_desc) if filter_desc else '无'}\n未找到匹配的数据！")
-            return
-            
-        # Calculate Metrics
-        try:
-            # Ensure the columns are numeric
-            total_qty = pd.to_numeric(df_filtered[col_tot], errors='coerce').sum()
-            pass_qty = pd.to_numeric(df_filtered[col_pas], errors='coerce').sum()
-            
-            # Count lots (number of rows after filtering)
-            total_lots = len(df_filtered)
-            
-            # Simple assumption for LAR calculation: 
-            # A lot is 'accepted' if pass_qty == total_qty (or based on some logic)
-            # Here, we'll calculate Yield (total pass / total qty)
-            # And for LAR, we'll assume a lot is accepted if its individual yield > 0
-            # You might need to adjust this logic based on your specific LAR definition
-            
-            # Calculate individual yields to determine accepted lots
-            df_filtered['yield'] = pd.to_numeric(df_filtered[col_pas], errors='coerce') / pd.to_numeric(df_filtered[col_tot], errors='coerce')
-            
-            # Let's assume a lot is accepted if its yield is 100% (or adjust threshold as needed)
-            # You can change >= 0.99 to whatever your quality standard is
-            accepted_lots = len(df_filtered[df_filtered['yield'] >= 0.98]) # Assuming >=98% is passing for a lot
-            
-            # Yield Calculation
-            overall_yield = (pass_qty / total_qty) * 100 if total_qty > 0 else 0
-            
-            # LAR Calculation
-            lar = (accepted_lots / total_lots) * 100 if total_lots > 0 else 0
-            
-            # Prepare result message
-            res_msg = "=== 计算完成 ===\n"
-            if filter_desc:
-                res_msg += f"筛选条件: {', '.join(filter_desc)}\n"
-            else:
-                res_msg += "筛选条件: 无 (全表数据)\n"
-                
-            res_msg += f"匹配行数 (批次): {total_lots}\n"
-            res_msg += "-" * 20 + "\n"
-            res_msg += f"总投入量: {total_qty:,.2f}\n"
-            res_msg += f"总合格量: {pass_qty:,.2f}\n"
-            res_msg += f"综合良率 (Yield): {overall_yield:.2f}%\n"
-            res_msg += f"批次接收率 (LAR): {lar:.2f}% (按单批良率>=98%计算)\n"
-            
-            self.log_result(res_msg)
-            
-        except Exception as e:
-            messagebox.showerror("计算错误", f"计算过程中发生错误:\n请确保所选的计算列包含有效的数值。\n错误信息: {str(e)}")
+    # 1. 侧边栏：数据导入
+    st.sidebar.header("📁 数据中心")
+    uploaded_files = st.sidebar.file_uploader("上传 Excel", type=["xlsx"], accept_multiple_files=True)
 
-    def log_result(self, message):
-        self.result_text.config(state="normal")
-        self.result_text.delete(1.0, tk.END)
-        self.result_text.insert(tk.END, message)
-        self.result_text.config(state="disabled")
+    if not uploaded_files:
+        st.info("💡 请在左侧上传 Excel 文件以开启分析。")
+        return
+
+    # 选择文件与子表
+    file_names = [f.name for f in uploaded_files]
+    selected_file = st.sidebar.selectbox("选择文件", file_names)
+    file_obj = next(f for f in uploaded_files if f.name == selected_file)
+
+    try:
+        excel_reader = pd.ExcelFile(file_obj)
+        selected_sheet = st.sidebar.selectbox("选择子表", excel_reader.sheet_names)
+        df = pd.read_excel(file_obj, sheet_name=selected_sheet)
+        df.columns = [str(c).strip() for c in df.columns]
+    except Exception as e:
+        st.error(f"读取失败: {e}")
+        return
+
+    # 2. 动态筛选器
+    st.subheader("🛠️ 数据筛选与维度选择")
+    potential_filters = ["月份", "周期", "供应商", "物料编码","类别","产品分类"]
+    actual_columns = df.columns.tolist()
+    available_filters = [col for col in potential_filters if col in actual_columns]
+    
+    filtered_df = df.copy()
+    
+    # 筛选布局
+    if available_filters:
+        f_cols = st.columns(len(available_filters))
+        for i, col_name in enumerate(available_filters):
+            with f_cols[i]:
+                unique_vals = sorted(df[col_name].dropna().unique().astype(str).tolist())
+                selected_vals = st.multiselect(f"{col_name}", unique_vals)
+                if selected_vals:
+                    filtered_df = filtered_df[filtered_df[col_name].astype(str).isin(selected_vals)]
+
+    # 3. 维度拆分设置 (核心优化点)
+    st.markdown("---")
+    analysis_col1, analysis_col2 = st.columns([1, 3])
+    
+    with analysis_col1:
+        st.write("📊 **分析维度设置**")
+        group_by_col = st.selectbox("选择要单独输出 LAR 的维度:", available_filters if available_filters else ["无"])
+        result_col = "判定结果"
+
+    if result_col not in actual_columns:
+        st.error(f"未找到“{result_col}”列")
+        return
+
+    # 4. 计算总 LAR
+    total_ok, total_ng, total_sum, total_lar = calculate_lar(filtered_df, result_col)
+
+    # 5. 计算分组 LAR
+    if group_by_col != "无":
+        # 按照选定维度进行聚合计算
+        def get_group_stats(group):
+            ok, ng, tot, lar = calculate_lar(group, result_col)
+            return pd.Series({'OK': ok, 'NG': ng, '总数': tot, 'LAR(%)': round(lar, 2)})
+
+        group_stats = filtered_df.groupby(group_by_col).apply(get_group_stats).reset_index()
+    else:
+        group_stats = pd.DataFrame()
+
+    # 6. 结果展示
+    # 顶部总览
+    st.subheader("📌 核心指标总览 (Total Overview)")
+    m1, m2, m3, m4 = st.columns(4)
+    m1.metric("筛选后总批数", f"{total_sum}")
+    m2.metric("总 OK 数量", f"{total_ok}")
+    m3.metric("总 NG 数量", f"{total_ng}", delta=None, delta_color="inverse")
+    m4.metric("总 LAR", f"{total_lar:.2f}%")
+
+    st.markdown("---")
+
+    # 细节对比展示
+    if not group_stats.empty:
+        tab1, tab2 = st.tabs(["📈 可视化图表", "📋 详细数据表"])
+        
+        with tab1:
+            st.write(f"**各 {group_by_col} LAR 值对比图**")
+            # 绘制柱状图
+            fig = px.bar(
+                group_stats, 
+                x=group_by_col, 
+                y='LAR(%)',
+                text='LAR(%)',
+                color='LAR(%)',
+                color_continuous_scale='RdYlGn', # 红色到绿色的渐变
+                hover_data=['OK', 'NG', '总数'],
+                height=500
+            )
+            fig.update_traces(textposition='outside')
+            st.plotly_chart(fig, use_container_width=True)
+
+        with tab2:
+            st.write(f"**各 {group_by_col} 统计明细**")
+            st.table(group_stats.style.background_gradient(subset=['LAR(%)'], cmap='RdYlGn'))
+    
+    # 7. 明细导出
+    st.markdown("---")
+    with st.expander("查看当前筛选的原始明细数据"):
+        st.dataframe(filtered_df, use_container_width=True)
+        csv = filtered_df.to_csv(index=False).encode('utf_8_sig')
+        st.download_button("📥 导出当前明细", data=csv, file_name="analysis_export.csv", mime="text/csv")
 
 if __name__ == "__main__":
-    root = tk.Tk()
-    
-    # Configure style
-    style = ttk.Style()
-    try:
-        style.theme_use('clam') # Use a slightly more modern theme if available
-    except:
-        pass
-        
-    app = DataAnalyzerApp(root)
-    root.mainloop()
+    main()
